@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { 
-  Leaf, 
-  Trash, 
-  FileText, 
-  Battery, 
-  GlassWater, 
-  Trash2, 
+import {
+  Leaf,
+  Trash,
+  FileText,
+  Battery,
+  GlassWater,
+  Trash2,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +21,10 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { Database } from '@/integrations/supabase/types'; // <-- IMPORT TIPE INI
+
+type ReportItemInsert = Database['public']['Tables']['report_items']['Insert'];
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -28,6 +32,7 @@ interface ReportModalProps {
   onSuccess: () => void;
 }
 
+// ... (sisa kode komponen tetap sama) ...
 interface WasteCategory {
   id: string;
   name: string;
@@ -37,73 +42,69 @@ interface WasteCategory {
   estimateText: string;
 }
 
-interface SelectedCategory extends WasteCategory {
-  weight: number;
-}
-
 const wasteCategories: WasteCategory[] = [
-  {
-    id: 'organik',
-    name: 'Organik',
-    icon: Leaf,
-    color: 'text-green-600',
-    bgColor: 'bg-green-100 border-green-200',
-    estimateText: '1 kg ≈ 2 mangkuk sisa makanan'
-  },
-  {
-    id: 'plastik',
-    name: 'Plastik',
-    icon: Trash,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100 border-blue-200',
-    estimateText: '1 kg ≈ 5 botol besar'
-  },
-  {
-    id: 'kertas',
-    name: 'Kertas',
-    icon: FileText,
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-100 border-yellow-200',
-    estimateText: '1 kg ≈ 50 lembar koran'
-  },
-  {
-    id: 'elektronik',
-    name: 'Elektronik',
-    icon: Battery,
-    color: 'text-gray-600',
-    bgColor: 'bg-gray-100 border-gray-200',
-    estimateText: '1 kg ≈ 10 baterai AA'
-  },
-  {
-    id: 'kaca_logam',
-    name: 'Kaca & Logam',
-    icon: GlassWater,
-    color: 'text-teal-600',
-    bgColor: 'bg-teal-100 border-teal-200',
-    estimateText: '1 kg ≈ 3 kaleng minuman'
-  },
-  {
-    id: 'lainnya',
-    name: 'Lainnya',
-    icon: Trash2,
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-50 border-gray-200',
-    estimateText: '1 kg ≈ bervariasi'
-  }
+    {
+      id: 'organik',
+      name: 'Organik',
+      icon: Leaf,
+      color: 'text-green-600',
+      bgColor: 'bg-green-100 border-green-200',
+      estimateText: '1 kg ≈ 2 mangkuk sisa makanan'
+    },
+    {
+      id: 'plastik',
+      name: 'Plastik',
+      icon: Trash,
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-100 border-blue-200',
+      estimateText: '1 kg ≈ 5 botol besar'
+    },
+    {
+      id: 'kertas',
+      name: 'Kertas',
+      icon: FileText,
+      color: 'text-yellow-600',
+      bgColor: 'bg-yellow-100 border-yellow-200',
+      estimateText: '1 kg ≈ 50 lembar koran'
+    },
+    {
+      id: 'elektronik',
+      name: 'Elektronik',
+      icon: Battery,
+      color: 'text-gray-600',
+      bgColor: 'bg-gray-100 border-gray-200',
+      estimateText: '1 kg ≈ 10 baterai AA'
+    },
+    {
+      id: 'kaca_logam',
+      name: 'Kaca & Logam',
+      icon: GlassWater,
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-100 border-teal-200',
+      estimateText: '1 kg ≈ 3 kaleng minuman'
+    },
+    {
+      id: 'lainnya',
+      name: 'Lainnya',
+      icon: Trash2,
+      color: 'text-gray-500',
+      bgColor: 'bg-gray-50 border-gray-200',
+      estimateText: '1 kg ≈ bervariasi'
+    }
 ];
 
 const quickReportPresets = [
-  {
-    name: "Hanya Sisa Makanan",
-    categories: [{ id: 'organik', weight: 1.0 }]
-  },
-  {
-    name: "Botol Plastik & Kardus",
-    categories: [
-      { id: 'plastik', weight: 0.5 },
-      { id: 'kertas', weight: 1.2 }
-    ]
-  }
+    {
+      name: "Hanya Sisa Makanan",
+      categories: [{ id: 'organik', weight: 1.0 }]
+    },
+    {
+      name: "Botol Plastik & Kardus",
+      categories: [
+        { id: 'plastik', weight: 0.5 },
+        { id: 'kertas', weight: 1.2 }
+      ]
+    }
 ];
 
 export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuccess }) => {
@@ -165,22 +166,70 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
     }, 0);
   };
 
-  const handleSubmitReport = async () => {
+  // GANTI FUNGSI INI DENGAN YANG DI BAWAH
+ const handleSubmitReport = async () => {
     setLoading(true);
-    
-    // Mock API call
-    setTimeout(() => {
-      setLoading(false);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Pengguna tidak terautentikasi");
+
       const points = Math.round(calculateTotalPoints());
-      
+
+      const { data: reportData, error: reportError } = await supabase
+        .from('reports')
+        .insert({
+          user_id: user.id,
+          points_awarded: points,
+          notes: notes,
+        })
+        .select()
+        .single();
+
+      if (reportError) throw reportError;
+      if (!reportData) throw new Error("Gagal membuat entri laporan.");
+
+      const reportItems: ReportItemInsert[] = selectedCategories.map(categoryId => ({
+        report_id: reportData.id,
+        category: categoryId as ReportItemInsert['category'],
+        weight_kg: categoryWeights[categoryId] || 0
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('report_items')
+        .insert(reportItems);
+
+      if (itemsError) throw itemsError;
+
+      // -- PERUBAHAN UTAMA DI SINI --
+      // Panggil function gamifikasi setelah laporan dan itemnya berhasil disimpan
+      const { error: gamificationError } = await supabase.rpc('handle_gamification_after_report', {
+          report_id_param: reportData.id,
+          user_id_param: user.id
+      });
+
+      if (gamificationError) {
+          console.error("Gagal memproses gamifikasi:", gamificationError);
+          // Tidak perlu throw error, cukup log saja agar user tetap dapat notifikasi sukses
+      }
+
       toast({
         title: "Laporan Terkirim! ✨",
-        description: `Selamat! Kamu mendapat ${points} poin dan 1 hari laporan beruntun.`,
+        description: `Selamat! Kamu mendapat ${points} poin dan progres tantanganmu telah diperbarui.`,
       });
-      
       onSuccess();
       handleClose();
-    }, 1500);
+
+    } catch (error) {
+      console.error("Gagal mengirim laporan:", error);
+      toast({
+        title: "Gagal Mengirim Laporan",
+        description: "Terjadi kesalahan saat menyimpan data. Silakan coba lagi.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const canProceed = () => {
@@ -201,6 +250,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
           <Progress value={progressPercentage} className="h-2 mt-2" />
         </DialogHeader>
 
+        {/* ... (sisa JSX dari komponen tidak berubah) ... */}
         <div className="space-y-6">
           {/* Step 1: Category Selection */}
           {currentStep === 1 && (

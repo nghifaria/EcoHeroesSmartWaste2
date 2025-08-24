@@ -1,300 +1,228 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Trophy, 
-  Clock, 
-  Star, 
-  CheckCircle, 
-  Target,
-  Leaf,
-  Users,
-  BookOpen,
-  Calendar
-} from 'lucide-react';
+import { Trophy, Clock, Star, CheckCircle, Target, Calendar, PlusCircle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
+import { CreateChallengeModal } from './CreateChallengeModal';
+import { useToast } from '@/hooks/use-toast'; // <-- 1. Import useToast
 
-interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  type: 'daily' | 'weekly' | 'special';
-  category: 'reporting' | 'education' | 'community';
-  points: number;
-  progress?: number;
-  maxProgress?: number;
-  duration: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  status: 'available' | 'active' | 'completed';
-  icon: typeof Trophy;
+type Challenge = Database['public']['Tables']['challenges']['Row'];
+
+interface ChallengeWithProgress extends Challenge {
+  progress: number;
+  status: 'active' | 'available' | 'completed';
 }
 
-const mockChallenges: Challenge[] = [
-  {
-    id: '1',
-    title: 'Misi Nol Plastik',
-    description: 'Hindari penggunaan plastik sekali pakai selama 7 hari berturut-turut',
-    type: 'weekly',
-    category: 'reporting',
-    points: 150,
-    progress: 60,
-    maxProgress: 100,
-    duration: 'Berakhir dalam 3 hari',
-    difficulty: 'medium',
-    status: 'active',
-    icon: Leaf
-  },
-  {
-    id: '2',
-    title: 'Raja Kompos',
-    description: 'Buat kompos dari sampah organik minimal 5 hari dalam seminggu',
-    type: 'weekly',
-    category: 'reporting',
-    points: 200,
-    progress: 80,
-    maxProgress: 100,
-    duration: 'Berakhir dalam 2 hari',
-    difficulty: 'hard',
-    status: 'active',
-    icon: Target
-  },
-  {
-    id: '3',
-    title: 'Pelapor Konsisten',
-    description: 'Laporkan sampah harian selama 3 hari berturut-turut',
-    type: 'daily',
-    category: 'reporting',
-    points: 75,
-    duration: 'Tantangan Harian',
-    difficulty: 'easy',
-    status: 'available',
-    icon: Calendar
-  },
-  {
-    id: '4',
-    title: 'Ahli Daur Ulang',
-    description: 'Pelajari 5 cara kreatif mendaur ulang botol plastik',
-    type: 'special',
-    category: 'education',
-    points: 100,
-    duration: 'Tidak ada batas waktu',
-    difficulty: 'easy',
-    status: 'available',
-    icon: BookOpen
-  },
-  {
-    id: '5',
-    title: 'EcoHero Ambassador',
-    description: 'Ajak 2 teman untuk bergabung dengan EcoHeroes',
-    type: 'special',
-    category: 'community',
-    points: 300,
-    duration: 'Tantangan Spesial',
-    difficulty: 'hard',
-    status: 'available',
-    icon: Users
-  },
-  {
-    id: '6',
-    title: 'Sampah Organik Champion',
-    description: 'Berhasil mengurangi sampah organik sebanyak 10kg dalam sebulan',
-    type: 'weekly',
-    category: 'reporting',
-    points: 250,
-    duration: 'Telah selesai',
-    difficulty: 'hard',
-    status: 'completed',
-    icon: Trophy
-  }
-];
-
 export const ChallengesPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('active');
+  const [activeTab, setActiveTab] = useState('available');
+  const [challenges, setChallenges] = useState<ChallengeWithProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const { toast } = useToast(); // <-- 2. Inisialisasi toast
 
-  const filterChallenges = (status: string) => {
-    switch (status) {
-      case 'active':
-        return mockChallenges.filter(c => c.status === 'active');
-      case 'available':
-        return mockChallenges.filter(c => c.status === 'available');
-      case 'completed':
-        return mockChallenges.filter(c => c.status === 'completed');
-      default:
-        return mockChallenges;
+  const fetchChallengesAndProgress = useCallback(async () => {
+    setLoading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: allChallenges, error: challengesError } = await supabase
+      .from('challenges')
+      .select('*');
+
+    if (challengesError) {
+      console.error("Gagal mengambil tantangan:", challengesError);
+      setLoading(false);
+      return;
+    }
+
+    const { data: userProgress, error: progressError } = await supabase
+      .from('user_challenge_progress')
+      .select('*')
+      .eq('user_id', user.id);
+      
+    if (progressError) {
+      console.error("Gagal mengambil progres:", progressError);
+    }
+
+    const enrichedChallenges: ChallengeWithProgress[] = (allChallenges || []).map(challenge => {
+      const progressData = (userProgress || []).find(p => p.challenge_id === challenge.id);
+      
+      let status: ChallengeWithProgress['status'] = 'available';
+      if (progressData) {
+        status = progressData.status === 'completed' ? 'completed' : 'active';
+      }
+
+      return {
+        ...challenge,
+        progress: progressData?.progress || 0,
+        status: status,
+      };
+    });
+
+    setChallenges(enrichedChallenges);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchChallengesAndProgress();
+  }, [fetchChallengesAndProgress]);
+
+  // 3. Tambahkan fungsi ini untuk menangani klik tombol "Mulai Tantangan"
+  const handleStartChallenge = async (challengeId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+        toast({ title: "Gagal", description: "Anda harus login untuk memulai tantangan.", variant: "destructive"});
+        return;
+    }
+
+    const { error } = await supabase
+      .from('user_challenge_progress')
+      .insert({
+          user_id: user.id,
+          challenge_id: challengeId,
+          progress: 0,
+          status: 'in_progress'
+      });
+
+    if (error) {
+        toast({ title: "Gagal Memulai Tantangan", description: error.message, variant: "destructive"});
+    } else {
+        toast({ title: "Sukses!", description: "Anda telah memulai tantangan baru."});
+        fetchChallengesAndProgress(); // Muat ulang data untuk memperbarui UI
+    }
+  };
+    
+  // ... (sisa fungsi helper tidak berubah) ...
+  const filterChallenges = (status: 'active' | 'available' | 'completed') => {
+    return challenges.filter(c => c.status === status);
+  };
+    
+  const getDifficultyColor = (points: number) => {
+    if (points <= 100) return 'bg-green-100 text-green-800 border-green-200';
+    if (points <= 200) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    return 'bg-red-100 text-red-800 border-red-200';
+  };
+
+  const getCategoryIcon = (type: string | null) => {
+    switch (type) {
+      case 'reporting_streak': return Calendar;
+      case 'category_target': return Target;
+      default: return Star;
     }
   };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy': return 'bg-green-100 text-green-800 border-green-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'hard': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'reporting': return 'bg-blue-100 text-blue-800';
-      case 'education': return 'bg-purple-100 text-purple-800';
-      case 'community': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getActionButton = (challenge: Challenge) => {
-    switch (challenge.status) {
-      case 'available':
-        return (
-          <Button className="btn-hero">
-            Mulai Tantangan
-          </Button>
-        );
-      case 'active':
-        return (
-          <Button variant="outline">
-            Lihat Progress
-          </Button>
-        );
-      case 'completed':
-        return (
-          <Button variant="outline" disabled>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Selesai
-          </Button>
-        );
-    }
-  };
 
   return (
-    <div className="p-4 space-y-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl font-bold text-foreground flex items-center justify-center gap-2">
-          <Trophy className="w-6 h-6 text-accent" />
-          Tantangan EcoHeroes
-        </h1>
-        <p className="text-muted-foreground">
-          Selesaikan tantangan dan raih poin untuk jadi EcoHero terhebat!
-        </p>
+    <>
+      <CreateChallengeModal 
+        isOpen={isCreateModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onChallengeCreated={fetchChallengesAndProgress}
+      />
+      <div className="p-4 space-y-6 max-w-4xl mx-auto">
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold text-foreground flex items-center justify-center gap-2">
+            <Trophy className="w-6 h-6 text-accent" />
+            Tantangan EcoHeroes
+          </h1>
+          <p className="text-muted-foreground">
+            Selesaikan tantangan dan raih poin untuk jadi EcoHero terhebat!
+          </p>
+        </div>
+
+        <div className="flex justify-end">
+            <Button onClick={() => setCreateModalOpen(true)}>
+                <PlusCircle className="w-4 h-4 mr-2" />
+                Buat Tantangan Baru
+            </Button>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="active">Aktif ({filterChallenges('active').length})</TabsTrigger>
+            <TabsTrigger value="available">Tersedia ({filterChallenges('available').length})</TabsTrigger>
+            <TabsTrigger value="completed">Selesai ({filterChallenges('completed').length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} className="space-y-4 pt-4">
+            {loading ? (
+              <p>Memuat tantangan...</p>
+            ) : filterChallenges(activeTab as any).length === 0 ? (
+              <Card className="card-elegant text-center py-8">
+                <CardContent>
+                  <Trophy className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    Tidak Ada Tantangan
+                  </h3>
+                  <p className="text-muted-foreground">Nantikan tantangan baru atau cek tab lainnya!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {filterChallenges(activeTab as any).map((challenge) => {
+                  const Icon = getCategoryIcon(challenge.type);
+                  const progressPercentage = challenge.goal > 0 ? (challenge.progress / challenge.goal) * 100 : 0;
+                  
+                  return (
+                    <Card key={challenge.id} className="card-elegant hover:shadow-lg transition-all">
+                       <CardHeader className="pb-3">
+                        <div className="flex items-start gap-4">
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-muted`}>
+                            <Icon className={`w-6 h-6 text-muted-foreground`} />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg">{challenge.title}</CardTitle>
+                              <div className="flex items-center gap-2">
+                                 <Badge variant="outline" className={getDifficultyColor(challenge.points)}>
+                                  {challenge.points <= 100 ? 'Mudah' : challenge.points <= 200 ? 'Sedang' : 'Sulit'}
+                                </Badge>
+                              </div>
+                            </div>
+                            <p className="text-muted-foreground text-sm">
+                              {challenge.description}
+                            </p>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="font-semibold text-accent">
+                                  +{challenge.points} Poin
+                                </span>
+                            </div>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        {challenge.status === 'active' && (
+                          <div className="space-y-2 mb-4">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Progress</span>
+                              <span className="font-medium">{challenge.progress}/{challenge.goal}</span>
+                            </div>
+                            <Progress value={progressPercentage} className="h-2" />
+                          </div>
+                        )}
+                        <div className="flex justify-end">
+                           {/* 4. Hubungkan fungsi ke tombol onClick */}
+                          {challenge.status === 'available' && <Button className="btn-hero" onClick={() => handleStartChallenge(challenge.id)}>Mulai Tantangan</Button>}
+                          {challenge.status === 'active' && <Button variant="outline">Lihat Progress</Button>}
+                          {challenge.status === 'completed' && <Button variant="outline" disabled><CheckCircle className="w-4 h-4 mr-2" />Selesai</Button>}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="active" className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Aktif ({mockChallenges.filter(c => c.status === 'active').length})
-          </TabsTrigger>
-          <TabsTrigger value="available" className="flex items-center gap-2">
-            <Star className="w-4 h-4" />
-            Tersedia ({mockChallenges.filter(c => c.status === 'available').length})
-          </TabsTrigger>
-          <TabsTrigger value="completed" className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" />
-            Selesai ({mockChallenges.filter(c => c.status === 'completed').length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value={activeTab} className="space-y-4">
-          {filterChallenges(activeTab).length === 0 ? (
-            <Card className="card-elegant text-center py-8">
-              <CardContent>
-                <Trophy className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  Tidak ada tantangan {activeTab === 'active' ? 'aktif' : activeTab === 'available' ? 'tersedia' : 'yang selesai'}
-                </h3>
-                <p className="text-muted-foreground">
-                  {activeTab === 'completed' 
-                    ? 'Belum ada tantangan yang berhasil diselesaikan. Ayo mulai tantangan pertamamu!'
-                    : 'Nantikan tantangan baru atau cek tab lainnya!'
-                  }
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {filterChallenges(activeTab).map((challenge) => {
-                const Icon = challenge.icon;
-                
-                return (
-                  <Card key={challenge.id} className="card-elegant hover:shadow-lg transition-all">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start gap-4">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                          challenge.status === 'completed' 
-                            ? 'bg-success/20' 
-                            : challenge.status === 'active'
-                              ? 'bg-primary/20'
-                              : 'bg-muted'
-                        }`}>
-                          <Icon className={`w-6 h-6 ${
-                            challenge.status === 'completed' 
-                              ? 'text-success' 
-                              : challenge.status === 'active'
-                                ? 'text-primary'
-                                : 'text-muted-foreground'
-                          }`} />
-                        </div>
-                        
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg">{challenge.title}</CardTitle>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className={getDifficultyColor(challenge.difficulty)}>
-                                {challenge.difficulty === 'easy' ? 'Mudah' : 
-                                 challenge.difficulty === 'medium' ? 'Sedang' : 'Sulit'}
-                              </Badge>
-                              <Badge className={getCategoryColor(challenge.category)}>
-                                {challenge.category === 'reporting' ? 'Pelaporan' :
-                                 challenge.category === 'education' ? 'Edukasi' : 'Komunitas'}
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          <p className="text-muted-foreground text-sm">
-                            {challenge.description}
-                          </p>
-                          
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-4">
-                              <span className="text-muted-foreground">
-                                <Clock className="w-4 h-4 inline mr-1" />
-                                {challenge.duration}
-                              </span>
-                              <span className="font-semibold text-accent">
-                                +{challenge.points} Poin
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent className="pt-0">
-                      {challenge.progress !== undefined && challenge.maxProgress && (
-                        <div className="space-y-2 mb-4">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Progress</span>
-                            <span className="font-medium">{challenge.progress}%</span>
-                          </div>
-                          <Progress value={challenge.progress} className="h-2" />
-                        </div>
-                      )}
-                      
-                      <div className="flex justify-end">
-                        {getActionButton(challenge)}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-    </div>
+    </>
   );
 };

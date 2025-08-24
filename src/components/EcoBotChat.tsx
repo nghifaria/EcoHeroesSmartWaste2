@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bot, Send, User, Minimize2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   id: string;
@@ -23,16 +24,6 @@ const suggestionsChips = [
   "Buatkan ide kompos sederhana"
 ];
 
-const mockResponses: Record<string, string> = {
-  'baterai': '🔋 **PENTING!** Baterai bekas adalah limbah B3 (Bahan Berbahaya dan Beracun). Jangan dibuang ke tempat sampah biasa!\n\n✅ **Cara yang benar:**\n• Kumpulkan baterai bekas di wadah terpisah\n• Bawa ke toko elektronik yang menerima baterai bekas\n• Atau serahkan ke fasilitas pengelolaan limbah B3 terdekat\n\n⚠️ Baterai mengandung logam berat yang berbahaya bagi lingkungan.',
-  
-  'styrofoam': '❌ **Styrofoam SULIT didaur ulang** di Indonesia karena:\n• Komposisinya 95% udara\n• Membutuhkan teknologi khusus\n• Tidak ekonomis untuk didaur ulang\n\n✅ **Alternatif yang lebih baik:**\n• Gunakan wadah makanan yang bisa dicuci ulang\n• Pilih kemasan ramah lingkungan\n• Jika terpaksa pakai, gunakan berulang kali untuk penyimpanan',
-  
-  'kompos': '🌱 **Cara Mudah Membuat Kompos:**\n\n**Bahan yang bisa:**\n• Sisa sayuran dan buah\n• Kulit telur\n• Ampas kopi dan teh\n• Daun kering\n\n**Langkah mudah:**\n1. Siapkan wadah berlubang\n2. Campurkan bahan hijau (sisa makanan) dan coklat (daun kering)\n3. Siram sedikit, aduk seminggu sekali\n4. Kompos siap dalam 2-3 bulan!\n\n💡 Tips: Potong kecil-kecil agar cepat terurai.',
-  
-  'cat': '🚫 **TIDAK BOLEH!** Cat mengandung bahan kimia berbahaya yang dapat mencemari air.\n\n✅ **Cara yang benar:**\n• Keringkan sisa cat di wadah terbuka\n• Setelah mengeras, buang ke tempat sampah B3\n• Atau bawa ke fasilitas pengelolaan limbat B3 terdekat\n\n💡 **Tips mencegah:**\n• Beli cat sesuai kebutuhan\n• Simpan sisa cat untuk perbaikan kecil'
-};
-
 export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -41,7 +32,6 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      // Add welcome message when chat opens for the first time
       const welcomeMessage: Message = {
         id: '1',
         text: 'Halo! Saya EcoBot, asisten pintarmu. Apa yang ingin kamu ketahui tentang pengelolaan sampah hari ini?',
@@ -53,30 +43,36 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages are added
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const generateResponse = (userMessage: string): string => {
+  const generateResponse = async (userMessage: string): Promise<string> => {
     const lowerMessage = userMessage.toLowerCase();
-    
-    // Check for keywords in mock responses
-    for (const [keyword, response] of Object.entries(mockResponses)) {
-      if (lowerMessage.includes(keyword)) {
-        return response;
-      }
+    // Ambil kata-kata kunci yang relevan dari input pengguna
+    const keywords = lowerMessage.split(' ').filter(word => word.length > 3);
+
+    if (keywords.length === 0) {
+        return "Maaf, saya tidak mengerti pertanyaan Anda. Coba gunakan kata yang lebih spesifik.";
     }
 
-    // Default responses
-    const defaultResponses = [
-      "Terima kasih atas pertanyaannya! Saya masih belajar tentang topik itu. Mungkin Anda bisa mencoba mencari di situs dinas lingkungan hidup setempat untuk informasi lebih detail.",
-      "Pertanyaan yang bagus! Untuk informasi yang lebih spesifik, saya sarankan menghubungi petugas kebersihan RT Anda atau dinas lingkungan hidup setempat.",
-      "Maaf, saya belum memiliki informasi lengkap tentang itu. Coba tanyakan hal lain tentang pemilahan sampah atau daur ulang yang bisa saya bantu!"
-    ];
+    // -- PERUBAHAN UTAMA DI SINI --
+    // Buat filter OR untuk setiap kata kunci. Ini akan mencari baris yang cocok dengan SALAH SATU kata kunci.
+    const orFilter = keywords.map(key => `keywords.cs.{${key}}`).join(',');
 
-    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+    const { data, error } = await supabase
+      .from('knowledge_base')
+      .select('answer')
+      .or(orFilter)
+      .limit(1); // Ambil jawaban pertama yang paling relevan
+
+    if (error || !data || data.length === 0) {
+      console.error("Error fetching response:", error);
+      return "Maaf, saya belum memiliki informasi lengkap tentang itu. Coba tanyakan hal lain tentang pemilahan sampah.";
+    }
+
+    return data[0].answer;
   };
 
   const handleSendMessage = async () => {
@@ -90,25 +86,57 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate typing delay
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: generateResponse(inputValue),
-        isBot: true,
-        timestamp: new Date()
-      };
+    // Menunggu 1 detik untuk simulasi "mengetik"
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-    }, 1000 + Math.random() * 1000); // Random delay between 1-2 seconds
+    const botResponseText = await generateResponse(currentInput);
+
+    const botMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      text: botResponseText,
+      isBot: true,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, botMessage]);
+    setIsTyping(false);
   };
-
+  
   const handleSuggestionClick = (suggestion: string) => {
     setInputValue(suggestion);
+    // Langsung kirim pesan saat saran diklik
+    // Supaya lebih interaktif, kita set input dan panggil handleSendMessage
+    // Kita perlu sedikit trik karena state update bersifat async
+    const tempInput = suggestion;
+    
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: tempInput,
+      isBot: false,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue(''); // Kosongkan input field
+    setIsTyping(true);
+
+    // Gunakan IIFE (Immediately Invoked Function Expression) async
+    (async () => {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const botResponseText = await generateResponse(tempInput);
+        const botMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            text: botResponseText,
+            isBot: true,
+            timestamp: new Date()
+        };
+        setMessages(prev => [...prev, botMessage]);
+        setIsTyping(false);
+    })();
   };
 
   const formatTime = (date: Date) => {
@@ -190,7 +218,6 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
               </div>
             )}
 
-            {/* Suggestion chips - only show if it's the first message */}
             {messages.length === 1 && (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground text-center">
