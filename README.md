@@ -1,5 +1,5 @@
-Tentu. Berdasarkan seluruh konteks proyek yang telah Anda berikan—mulai dari filosofi, tumpukan teknologi, fitur, hingga struktur kode—berikut adalah `README.md` yang komprehensif dan siap pakai untuk repositori GitHub Anda.
-
+Proyek dapat diakses pada
+https://eco-heroes-smart-waste2.vercel.app/
 -----
 
 # EcoHeroes: Smart Waste Challenge
