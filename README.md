@@ -6,7 +6,7 @@ Tentu. Berdasarkan seluruh konteks proyek yang telah Anda berikan—mulai dari f
 
 **EcoHeroes: Smart Waste Challenge** adalah prototipe aplikasi web progresif (PWA) yang dirancang untuk mengubah kebiasaan pengelolaan sampah di tingkat komunitas melalui edukasi, gamifikasi, dan interaksi cerdas. Aplikasi ini memberdayakan warga untuk menjadi pahlawan lingkungan (`EcoHeroes`) di komunitas mereka sendiri dengan cara yang memotivasi dan tidak membebani.
 
-Proyek ini dibuat sebagai entri untuk kompetisi **AI Innovation Challenge COMPFEST 17** dengan tema "Smart City and Urban Living".
+Proyek ini dibuat sebagai submisi untuk kompetisi **AI Innovation Challenge COMPFEST 17** dengan tema "Smart City and Urban Living".
 
 ## ✨ Fitur Utama
 
