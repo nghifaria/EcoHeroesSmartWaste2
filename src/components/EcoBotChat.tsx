@@ -23,14 +23,82 @@ const suggestionsChips = [
   "Buatkan ide kompos sederhana"
 ];
 
-const mockResponses: Record<string, string> = {
-  'baterai': '🔋 **PENTING!** Baterai bekas adalah limbah B3 (Bahan Berbahaya dan Beracun). Jangan dibuang ke tempat sampah biasa!\n\n✅ **Cara yang benar:**\n• Kumpulkan baterai bekas di wadah terpisah\n• Bawa ke toko elektronik yang menerima baterai bekas\n• Atau serahkan ke fasilitas pengelolaan limbah B3 terdekat\n\n⚠️ Baterai mengandung logam berat yang berbahaya bagi lingkungan.',
-  
-  'styrofoam': '❌ **Styrofoam SULIT didaur ulang** di Indonesia karena:\n• Komposisinya 95% udara\n• Membutuhkan teknologi khusus\n• Tidak ekonomis untuk didaur ulang\n\n✅ **Alternatif yang lebih baik:**\n• Gunakan wadah makanan yang bisa dicuci ulang\n• Pilih kemasan ramah lingkungan\n• Jika terpaksa pakai, gunakan berulang kali untuk penyimpanan',
-  
-  'kompos': '🌱 **Cara Mudah Membuat Kompos:**\n\n**Bahan yang bisa:**\n• Sisa sayuran dan buah\n• Kulit telur\n• Ampas kopi dan teh\n• Daun kering\n\n**Langkah mudah:**\n1. Siapkan wadah berlubang\n2. Campurkan bahan hijau (sisa makanan) dan coklat (daun kering)\n3. Siram sedikit, aduk seminggu sekali\n4. Kompos siap dalam 2-3 bulan!\n\n💡 Tips: Potong kecil-kecil agar cepat terurai.',
-  
-  'cat': '🚫 **TIDAK BOLEH!** Cat mengandung bahan kimia berbahaya yang dapat mencemari air.\n\n✅ **Cara yang benar:**\n• Keringkan sisa cat di wadah terbuka\n• Setelah mengeras, buang ke tempat sampah B3\n• Atau bawa ke fasilitas pengelolaan limbat B3 terdekat\n\n💡 **Tips mencegah:**\n• Beli cat sesuai kebutuhan\n• Simpan sisa cat untuk perbaikan kecil'
+// Gemini API configuration
+const GEMINI_API_KEY = "AIzaSyBCpVFAFS6se4u0vvnBLHO7zB1hvAaGrqg";
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+
+// Types for Gemini API
+interface GeminiRequest {
+  contents: Array<{
+    parts: Array<{
+      text: string;
+    }>;
+  }>;
+}
+
+interface GeminiResponse {
+  candidates: Array<{
+    content: {
+      parts: Array<{
+        text: string;
+      }>;
+    };
+  }>;
+}
+
+// Check if message is waste-related
+const isWasteRelated = (message: string): boolean => {
+  const wasteKeywords = [
+    "sampah", "limbah", "daur ulang", "recycle", "kompos", "organik", "anorganik",
+    "plastik", "kertas", "botol", "kaleng", "kardus", "tempat sampah", "tong sampah",
+    "pengelolaan", "pengolahan", "pemilahan", "reduce", "reuse", "3r", "5r",
+    "lingkungan", "pencemaran", "polusi", "tpa", "tempat pembuangan", "bank sampah",
+    "waste", "garbage", "trash", "landfill", "biodegradable", "non-biodegradable",
+    "eco", "ramah lingkungan", "green", "hijau", "sustainability", "berkelanjutan",
+    "baterai", "styrofoam", "cat", "minyak", "elektronik"
+  ];
+
+  const messageLower = message.toLowerCase();
+  return wasteKeywords.some(keyword => messageLower.includes(keyword));
+};
+
+// Call Gemini API
+const callGeminiAPI = async (prompt: string): Promise<string> => {
+  try {
+    const requestData: GeminiRequest = {
+      contents: [
+        {
+          parts: [
+            { text: prompt }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(GEMINI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': GEMINI_API_KEY
+      },
+      body: JSON.stringify(requestData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error (status ${response.status})`);
+    }
+
+    const data: GeminiResponse = await response.json();
+    
+    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content.parts.length > 0) {
+      return data.candidates[0].content.parts[0].text;
+    } else {
+      throw new Error('No valid response from Gemini API');
+    }
+  } catch (error) {
+    console.error('Gemini API error:', error);
+    throw error;
+  }
 };
 
 export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
@@ -59,24 +127,33 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
     }
   }, [messages]);
 
-  const generateResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
-    
-    // Check for keywords in mock responses
-    for (const [keyword, response] of Object.entries(mockResponses)) {
-      if (lowerMessage.includes(keyword)) {
-        return response;
-      }
+  const generateResponse = async (userMessage: string): Promise<string> => {
+    // Check if the question is waste-related
+    if (!isWasteRelated(userMessage)) {
+      return "Halo! 😊 Saya adalah Bot Sampah yang khusus membantu masalah pengelolaan sampah nih! Saya hanya bisa menjawab pertanyaan tentang:\n\n🗂️ Pengelolaan sampah\n♻️ Daur ulang\n🌱 Kompos dan sampah organik\n🏛️ Bank sampah\n🌍 Masalah lingkungan\n\nYuk, tanya sesuatu tentang sampah! Saya siap bantu! 🎉";
     }
 
-    // Default responses
-    const defaultResponses = [
-      "Terima kasih atas pertanyaannya! Saya masih belajar tentang topik itu. Mungkin Anda bisa mencoba mencari di situs dinas lingkungan hidup setempat untuk informasi lebih detail.",
-      "Pertanyaan yang bagus! Untuk informasi yang lebih spesifik, saya sarankan menghubungi petugas kebersihan RT Anda atau dinas lingkungan hidup setempat.",
-      "Maaf, saya belum memiliki informasi lengkap tentang itu. Coba tanyakan hal lain tentang pemilahan sampah atau daur ulang yang bisa saya bantu!"
-    ];
+    // Create prompt for Gemini
+    const prompt = `Kamu adalah asisten AI yang ceria dan ramah, ahli dalam pengelolaan sampah dan limbah. Jawab pertanyaan berikut dalam bahasa Indonesia dengan gaya yang hangat dan antusias.
 
-    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+PENTING:
+- Berikan jawaban yang ringkas dan mudah dipahami (maksimal 3-4 paragraf)
+- Gunakan tone yang ceria dan positif
+- Sertakan emoji yang relevan untuk membuat jawaban lebih menarik
+- Fokus pada solusi praktis dan tips berguna
+- Jika ada list/poin, batasi maksimal 4-5 poin saja
+
+Pertanyaan: ${userMessage}
+
+Berikan jawaban yang informatif tapi singkat, praktis, dan dengan semangat!`;
+
+    try {
+      return await callGeminiAPI(prompt);
+    } catch (error) {
+      console.error('Error calling Gemini API:', error);
+      // Return fallback response
+      return "Ups! 😅 Saya lagi ada gangguan koneksi nih. Tapi tenang, ini info berguna tentang sampah:\n\n🌿 **Sampah Organik**: Sisa makanan, daun, kulit buah yang bisa jadi kompos\n♻️ **Sampah Anorganik**: Plastik, logam, kaca yang perlu didaur ulang\n\n✨ **Tips 3R**: Reduce (kurangi), Reuse (pakai lagi), Recycle (daur ulang)!\n\nCoba tanya lagi ya, semoga koneksinya udah lancar! 🚀";
+    }
   };
 
   const handleSendMessage = async () => {
@@ -89,22 +166,35 @@ export const EcoBotChat: React.FC<EcoBotChatProps> = ({ isOpen, onClose }) => {
       timestamp: new Date()
     };
 
+    const currentInput = inputValue;
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate typing delay
-    setTimeout(() => {
+    try {
+      // Call Gemini API
+      const botResponseText = await generateResponse(currentInput);
+      
       const botResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: generateResponse(inputValue),
+        text: botResponseText,
         isBot: true,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, botResponse]);
+    } catch (error) {
+      console.error('Error generating response:', error);
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "Maaf, terjadi kesalahan. Silakan coba lagi nanti! 😅",
+        isBot: true,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1000 + Math.random() * 1000); // Random delay between 1-2 seconds
+    }
   };
 
   const handleSuggestionClick = (suggestion: string) => {
